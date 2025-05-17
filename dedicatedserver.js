@@ -36,9 +36,13 @@ export class DedicatedServer {
 
     io.onConnection(channel => {
 
+      channel.ent = new Ent(THREE);
       this.list.push(channel);
       io.room(channel.roomId).emit('chat message', {a: this.list.length});
       channel.emit('chat message', 'aaaaaaaaa');
+      //channel.emit('chat message', this.list(this.list.length).ent);
+      channel.emit('chat message', this.list.pop().ent);
+
       //for (var x = 0; x < list.length; x++){
         //io.room(channel.roomId).emit('chat message', list[x].userData.name);
       //}

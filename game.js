@@ -1,17 +1,18 @@
-export function turn(THREE, scene, dynamicObjects, camera, jolt, physicsSystem, input, players, init, bodyInterface, i, deltaTime){
-  if(input.init){
-  }
+export function turn(THREE, scene, dynamicObjects, camera, jolt, physicsSystem, player, bodyInterface, deltaTime){
 
-  if(input.clickedLeft){
-    if(players[i].projectiles.length > 0){
-      let id = players[i].projectiles[0].threeObject.userData.body.GetID();
+  //if(player.state.init){
+  //}
+
+  if(player.input.clickedLeft){
+    if(player.state.projectiles.length > 0){
+      let id = player.state.projectiles[0].threeObject.userData.body.GetID();
       bodyInterface.RemoveBody(id);
       bodyInterface.DestroyBody(id);
-      delete players[i].projectiles[0].threeObject.userData.body;
-      scene.remove(players[i].projectiles[0].threeObject);
+      delete player.state.projectiles[0].threeObject.userData.body;
+      scene.remove(player.state.projectiles[0].threeObject);
     }
 
-    let shape = new Jolt.BoxShape(new Jolt.Vec3(.25, .25, .25), 0.05, null);
+    let shape = new Jolt.BoxShape(new Jolt.Vec3(.15, .15, .15), 0.05, null);
     let creationSettings = new Jolt.BodyCreationSettings(
         shape,
         new Jolt.Vec3(camera.position.x, camera.position.y, camera.position.z),
@@ -24,27 +25,32 @@ export function turn(THREE, scene, dynamicObjects, camera, jolt, physicsSystem, 
     Jolt.destroy(creationSettings);
     body.SetIsSensor(true);
     body.SetCollideKinematicVsNonDynamic(true);
+    console.log(Jolt);
+        //Jolt.PhysicsUpdateContext.CCDBody(body.GetID());   
+
     bodyInterface.AddBody(body.GetID(), Jolt.EActivation_Activate);
 
-    players[i].projectiles[0] = {};
+
+
+    player.state.projectiles[0] = {};
     let threeObject = getThreeObjectForBody(body, 0xffffff, THREE);
     threeObject.userData.body = body;
-    players[i].projectiles[0].threeObject = threeObject;
-    scene.add(players[i].projectiles[0].threeObject);
+    player.state.projectiles[0].threeObject = threeObject;
+    scene.add(player.state.projectiles[0].threeObject);
 
-    players[i].projectiles[0].bodyID = body.GetID();
-    players[i].projectiles[0].position = bodyInterface.GetPosition(players[i].projectiles[0].bodyID);
-    players[i].projectiles[0].active = true;
 
-    players[i].material = new THREE.MeshBasicMaterial( { color: 0x00ff00 } );
-    players[i].geometrytest = new THREE.BoxGeometry( .125, .125, .125 );
-    players[i].cubec = new THREE.Mesh( players[i].geometrytest, players[i].material );
 
-    scene.add(players[i].cubec);
+    player.state.projectiles[0].bodyID = body.GetID();
+    player.state.projectiles[0].position = bodyInterface.GetPosition(player.state.projectiles[0].bodyID);
+    player.state.projectiles[0].active = true;
 
-    players[i].projectiles[0].threeObject.setRotationFromQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
+    player.state.material = new THREE.MeshBasicMaterial( { color: 0x00ff00 } );
+    player.state.geometrytest = new THREE.BoxGeometry( .125, .125, .125 );
+    player.state.cubec = new THREE.Mesh( player.state.geometrytest, player.state.material );
 
-    let threeQuat = players[i].projectiles[0].threeObject.quaternion;
+    player.state.projectiles[0].threeObject.setRotationFromQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
+
+    let threeQuat = player.state.projectiles[0].threeObject.quaternion;
     let quat = new Jolt.Quat(
       threeQuat._x,
       threeQuat._y,
@@ -53,53 +59,54 @@ export function turn(THREE, scene, dynamicObjects, camera, jolt, physicsSystem, 
     );
 
     bodyInterface.SetRotation(
-      players[i].projectiles[0].bodyID,
+      player.state.projectiles[0].bodyID,
       quat,
       Jolt.EActivation_DontActivate
     );
   }
 
-  if(input.clickedRight){
+  if(player.input.clickedRight){
   }
 
-  if(players[i].projectiles.length > 0){
-    for (var n = 0; n < input.contacts.length; n++) {
-      if(input.contacts[n].body2.GetID().GetIndex() == players[i].projectiles[0].bodyID.GetIndex()){
-        players[i].knockBack(
-          players[i].projectiles[0].threeObject.position.x,
-          players[i].projectiles[0].threeObject.position.y,
-          players[i].projectiles[0].threeObject.position.z,
-          1.5,
-          input
+  if(player.state.projectiles.length > 0){
+    for (var n = 0; n < player.state.contacts.length; n++) {
+      if(player.state.contacts[n].body2.GetID().GetIndex() == player.state.projectiles[0].bodyID.GetIndex()){
+        //alert('kb');
+        player.knockBack(
+          player.state.projectiles[0].threeObject.position.x,
+          player.state.projectiles[0].threeObject.position.y,
+          player.state.projectiles[0].threeObject.position.z,
+          3,
+          player.input
         );
 
-        players[i].projectiles[0].det = true;
+        player.state.projectiles[0].det = true;
 
       }
     }
 
-    if(players[i].projectiles[0].det){
-      let id = players[i].projectiles[0].threeObject.userData.body.GetID();
+    if(player.state.projectiles[0].det){
+      let id = player.state.projectiles[0].threeObject.userData.body.GetID();
       bodyInterface.RemoveBody(id);
       bodyInterface.DestroyBody(id);
-      delete players[i].projectiles[0].threeObject.userData.body;
-      scene.remove(players[i].projectiles[0].threeObject);
-      players[i].projectiles = [];
+      delete player.state.projectiles[0].threeObject.userData.body;
+      scene.remove(player.state.projectiles[0].threeObject);
+      player.state.projectiles = [];
     } else {
-      players[i].projectiles[0].threeObject.translateZ(-.25 * 100 * deltaTime);
+      player.state.projectiles[0].threeObject.translateZ(-.25 * 1000 * deltaTime);
 
       let joltPosition = new Jolt.RVec3(
-        players[i].projectiles[0].threeObject.position.x,
-        players[i].projectiles[0].threeObject.position.y,
-        players[i].projectiles[0].threeObject.position.z
+        player.state.projectiles[0].threeObject.position.x,
+        player.state.projectiles[0].threeObject.position.y,
+        player.state.projectiles[0].threeObject.position.z
       );
 
       bodyInterface.SetPosition(
-        players[i].projectiles[0].bodyID,
+        player.state.projectiles[0].bodyID,
         joltPosition,
         Jolt.EActivation_DontActivate
       );
-      players[i].projectiles[0].position = bodyInterface.GetPosition(players[i].projectiles[0].bodyID);
+      player.state.projectiles[0].position = bodyInterface.GetPosition(player.state.projectiles[0].bodyID);
     }
   }
 }

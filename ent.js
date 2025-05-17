@@ -1,11 +1,12 @@
 export class Ent {
   constructor(THREE){
     this.move = { x: 0.0, y: 0.0, z: 0.0 };
-    this.input = { x: 0.0, y: 0.0, z: 0.0 };
+    this.playerInput = { x: 0.0, y: 0.0, z: 0.0 };
     this.inputMagZ = 1;
     this.inputMagX = 1;
     this.inputMag = 1;
     this.movePosition = { x: 0, z: 0 };
+    this.oldPosition = { x: 0, y:0 , z: 0 };
     this.translation = { x: 0, y:0 , z: 0 };
     this.momentum = new THREE.Vector3(0,0,0);
     this.lateralMomentum = new THREE.Vector2(0,0);
@@ -13,20 +14,22 @@ export class Ent {
     this.rotateMomentum = {};
     this.speed = 0;
     this.maxSpeed = 30;
-    this.minSpeed = .1;
+    this.minSpeed = .01;
     this.grav = .0;
     this.agility = 0;
-    this.groundAgil = .3;//1
-    this.airAgil = .06; //.1 .03
-    this.groundFric = 75;//350
+    this.groundAgil = 10000;//1
+    this.airAgil = .03; //.1 .03
+    this.currentAgil = 0;
+    this.groundFric = 100000;//350 75
     this.friction = this.groundFric;
     this.airFric = 0;
-    this.slopeTolerance = .25;
+    this.crouchFrictionFactor = 2;
+    this.slopeTolerance = .60;
     this.lastY = 0.0001;
     this.lookingBack = false;
     this.jumpReleased = true;
     this.jumpAmp = .00;
-    this.surfMin = .38;//42
+    this.surfMin = .35;//42 38 
     this.surfMax = .53;
     this.surfing = false;
     this.angleOfChange = 0;
@@ -43,74 +46,105 @@ export class Ent {
     this.lastLat = new THREE.Vector3(0,0,0);
     this.projectiles = [];
 
-    this.knockBack = function(x, y, z, multiplier, input) {
-      if(input.position.distanceTo(new THREE.Vector3(x,y,z)) < 8){
-        if(input.hasCrouched){
-          input.playerPostion = new THREE.Vector3(input.cameraPosition.x,
-          input.cameraPosition.y + .5,input.cameraPosition.z);
-        } else {
-          input.playerPostion = new THREE.Vector3(input.cameraPosition.x,
-          input.cameraPosition.y + 1,input.cameraPosition.z);
-        }
-        input.knockBackDistance = input.position.distanceTo(new THREE.Vector3(x,y,z));
-        input.knockBackDir = new THREE.Vector3().subVectors(input.playerPostion,new THREE.Vector3(x,y,z)).normalize();
-        input.knockBackMultiplier = multiplier;
-        this.momentum.x += input.knockBackDir.x * multiplier * 10 ;
-        this.momentum.z += input.knockBackDir.z * multiplier * 10 ;
+    this.input = {
+      forwardPressed: false,
+      backwardPressed: false,
+      leftPressed: false,
+      rightPressed: false,
+      jump: false,
+      crouched: false,
+      lastMouseMove: performance.now(),
+      MouseMoveX: 0,
+      vector: {x:0,z:0},
+    };
+
+    this.state = {
+      jumpReleased: false,
+      contacts: [],
+      projectiles: [],
+      grounded: false,
+      contactPosition: {x:0,y:0,z:0},
+      collision: {y:0},
+
+      knockBackDir: new THREE.Vector3(0,0,0),
+
+      crouching: false,
+      uncrouchBlock: false,
+      midAirFromCrouch: false,
+      hasCrouched: false,
+
+      position: new THREE.Vector3(0,0,0),
+      changeInVelocity: 0,
+      reset: false,
+
+      character: false,
+      threeCharacter: false,
+
+      //init: true,
+    };
+
+    this.knockBack = function(x, y, z, multiplier) {
+      if(this.state.position.distanceTo(new THREE.Vector3(x,y,z)) < 8){
+
+        this.state.knockBackDistance = this.state.position.distanceTo(new THREE.Vector3(x,y,z));
+        this.state.knockBackDir = new THREE.Vector3().subVectors(this.state.position,new THREE.Vector3(x,y,z)).normalize();
+        this.state.knockBackMultiplier = multiplier;
+        this.momentum.x += this.state.knockBackDir.x * multiplier * 10 ;
+        this.momentum.z += this.state.knockBackDir.z * multiplier * 10 ;
         this.knockedBack = true;
       }
     }
     
-    this.turn = function(input){
-      this.inputMagZ = 1 / Math.abs(input.vector.z);
-      this.inputMagX = 1 / Math.abs(input.vector.x);
-      this.vect = normalize(input.vector);
-      this.input.x = (this.vect.x  * (this.agility))/this.inputMagX;
-      this.input.z = (this.vect.z  * (this.agility))/this.inputMagZ; 
+    this.turn = function(deltaTime){
+      this.inputMagZ = 1 / Math.abs(this.input.vector.z);
+      this.inputMagX = 1 / Math.abs(this.input.vector.x);
+      this.vect = normalize(this.input.vector);
+      this.playerInput.x = (this.vect.x  * (this.agility))/this.inputMagX;
+      this.playerInput.z = (this.vect.z  * (this.agility))/this.inputMagZ; 
 
-      let erg = input.cameraDirection;
+      let erg = this.input.cameraDirection;
 
       if(erg.x == 0){erg.x += 0.0001};
 
       let erv = new THREE.Vector2(erg.x,erg.z);
-      let rotatedInput = new THREE.Vector2(-this.input.z,this.input.x).rotateAround(new THREE.Vector2(0,0),erv.angle()); 
+      let rotatedInput = new THREE.Vector2(-this.playerInput.z,this.playerInput.x).rotateAround(new THREE.Vector2(0,0),erv.angle()); 
 
       this.move.x = rotatedInput.x ;
       this.move.z = rotatedInput.y ;
       this.movePosition.x = rotatedInput.x;
       this.movePosition.z = rotatedInput.y;
-      this.movePosition.y = input.cameraPosition.y;
+      this.movePosition.y = this.state.position.y;
 
-      if(input.grounded){
-        this.grounded(input);
+      if(this.state.grounded){
+        this.grounded();
       } else {
-        this.airborn(input);
+        this.airborn(deltaTime);
       }
-      this.applyGravity(input);
-      this.applyMomentum(input);
+      //this.applyGravity(deltaTime);
+      this.applyMomentum(deltaTime);
     }
 
-    this.surf = function(input){
-      let mouseElapse = performance.now() - input.lastMouseMove;
+    this.surf = function(deltaTime){
+      let mouseElapse = performance.now() - this.input.lastMouseMove;
 
-      if(mouseElapse > 25){input.mouseMoveX = 0;}
+      if(mouseElapse > 25){this.input.mouseMoveX = 0;}
 
-      this.mouseMovedX = input.mouseMoveX;
+      this.mouseMovedX = this.input.mouseMoveX;
       this.angleOfChange = new THREE.Vector2(this.movePosition.x, this.movePosition.z)
         .angleTo(new THREE.Vector2(this.momentum.x, this.momentum.z))/Math.PI;
 
-      if(input.vector.x == 0 && input.vector.z == 0 || mouseElapse > 25){this.angleOfChange = 0;}
+      if(this.input.vector.x == 0 && this.input.vector.z == 0 || mouseElapse > 25){this.angleOfChange = 0;}
 
       if(Math.abs(this.angleOfChange) > this.surfMin && Math.abs(this.angleOfChange) < this.surfMax){
         this.surfing = true;
-        input.mouseMoveX += input.mouseMoveX;
-        input.mouseMoveX += input.mouseMoveX;
-        if(input.mouseMoveX < 0){
+        this.input.mouseMoveX += this.input.mouseMoveX;
+        this.input.mouseMoveX += this.input.mouseMoveX;
+        if(this.input.mouseMoveX < 0){
           if(this.angleOfChange < -this.surfMax){this.angleOfChange = -this.surfMax}
-          this.angleOfChange = THREE.MathUtils.clamp(THREE.MathUtils.clamp(-this.angleOfChange+.5,-.1,0) * input.d * 1000,-1,0);
+          this.angleOfChange = THREE.MathUtils.clamp(THREE.MathUtils.clamp(-this.angleOfChange+.5,-.1,0) * deltaTime * 1000,-1,0);
         } else {
           if(this.angleOfChange > this.surfMax){this.angleOfChange = this.surfMax}
-          this.angleOfChange = THREE.MathUtils.clamp(THREE.MathUtils.clamp(this.angleOfChange-.5,0,.1)  * input.d * 1000,0,1);}
+          this.angleOfChange = THREE.MathUtils.clamp(THREE.MathUtils.clamp(this.angleOfChange-.5,0,.1)  * deltaTime * 1000,0,1);}
           this.rotateMomentum = new THREE.Vector2(this.momentum.x, this.momentum.z).rotateAround(
           new THREE.Vector2(0,0),(this.angleOfChange ));
           this.momentum.x = this.rotateMomentum.x;
@@ -119,18 +153,18 @@ export class Ent {
        this.surfing = false;}
     }
 
-    this.applyGravity = function(input){
-      this.movePosition.y += (this.momentum.y + (this.momentum.y - this.grav * input.d));
+    this.applyGravity = function(deltaTime){
+      this.movePosition.y += (this.momentum.y + (this.momentum.y - this.grav * deltaTime));
 
-      if(input.grounded && !input.jump){
+      if(this.state.grounded && !this.input.jump){
         this.momentum.y = 0;
       } else{
-        this.momentum.y -= this.grav * input.d;
+        this.momentum.y -= this.grav * deltaTime;
       }
-      this.translation.y = this.movePosition.y - input.cameraPosition.y;
+      this.translation.y = this.movePosition.y - this.state.position.y;
     }
 
-    this.grounded = function(input){
+    this.grounded = function(){
       if(this.midAir){
         //landing
         //this.momentum.x /= 1.5;
@@ -140,43 +174,38 @@ export class Ent {
 
       this.midAir = false;
 
-      if(this.jumpReleased && input.jump){
+      if(this.jumpReleased && this.input.jump){
         this.momentum.y = this.jumpAmp;
       } else {
         this.friction = this.groundFric;
         this.agility = this.groundAgil;
       }
 
-      if(!input.jump){this.jumpReleased = true;}
+      if(!this.input.jump){this.jumpReleased = true;}
     }
 
-    this.airborn = function(input){
+    this.airborn = function(deltaTime){
       this.friction = this.airFric;
       this.agility = this.airAgil;
       this.midAir = true;
-      this.surf(input);
+      this.surf(deltaTime);
 
-      if(input.jump){this.jumpReleased = false;} else {this.jumpReleased = true;}
+      if(this.input.jump){this.jumpReleased = false;} else {this.jumpReleased = true;}
     }
 
-    this.applyMomentum = function(input){
+    this.applyMomentum = function(deltaTime){
       this.reorientation = new THREE.Vector2(this.movePosition.x, this.movePosition.z)
                .angleTo(new THREE.Vector2(this.momentum.x, this.momentum.z))/Math.PI;
       this.reorientation -= .5;
       this.reorientation = -this.reorientation + .5;
       this.reorientation = THREE.MathUtils.clamp(this.reorientation,0,.9) * 1.1;
 
-      if(input.crouched || input.autoCrouched){
-        this.move.x = this.move.x/2;
-        this.move.z = this.move.z/2;
-      }
-
       if(!this.sliding){
-      this.momentum.x += this.move.x ;
-      this.momentum.z += this.move.z ;
+      this.momentum.x += this.move.x * deltaTime;
+      this.momentum.z += this.move.z * deltaTime;
       }
 
-      if(input.vector.x == 0 && input.vector.z == 0 || !this.isGrounded){this.reorientation = 1;}
+      if(this.input.vector.x == 0 && this.input.vector.z == 0 || !this.isGrounded){this.reorientation = 1;}
 
       if(this.reorientation < .5 && !this.surfing){
         this.reorientation *= 2;
@@ -185,61 +214,53 @@ export class Ent {
         this.momentum.z *= this.reorientation;
       }
 
-      this.vect = this.momentum;
-      this.lat.x = input.cameraPosition.x;
-      this.lat.y = input.cameraPosition.z;
-      this.speed = this.lat.distanceTo(this.lastLat) * input.d * 1000
-      this.lastLat.x = input.oldPosition.x;
-      this.lastLat.y = input.oldPosition.z;
+      this.vect = this.momentum ;
+      this.lat.x = this.state.position.x;
+      this.lat.y = this.state.position.z;
+      this.speed = this.lat.distanceTo(this.lastLat) * deltaTime
+      this.lastLat.x = this.oldPosition.x;
+      this.lastLat.y = this.oldPosition.z;
       this.vect = normalize(this.vect);
 
       if(!this.sliding){ 
-      this.vect.x -= this.vect.x - (this.vect.x * this.friction * input.d);
-      this.vect.z -= this.vect.z - (this.vect.z * this.friction * input.d);
+      this.vect.x -= (this.vect.x - (this.vect.x * (this.grounded && this.input.crouched || this.input.autoCrouched?this.friction*this.crouchFrictionFactor:this.friction))) ;
+      this.vect.z -= (this.vect.z - (this.vect.z * (this.grounded && this.input.crouched || this.input.autoCrouched?this.friction*this.crouchFrictionFactor:this.friction))) ;
       }
 
       this.lateralMomentum.x = this.momentum.x;
       this.lateralMomentum.z = this.momentum.z;
-      this.momentum.x -= this.vect.x * ( (this.speed ) ) * input.d * 100;
-      this.momentum.z -= this.vect.z * ( (this.speed ) ) * input.d * 100;
-      this.translation.x = THREE.MathUtils.clamp(this.momentum.x/100,-this.maxMomentum,this.maxMomentum);
-      this.translation.z = THREE.MathUtils.clamp(this.momentum.z/100,-this.maxMomentum,this.maxMomentum);
+
+      this.momentum.x -= (this.vect.x ) * (this.speed ) ;
+      this.momentum.z -= (this.vect.z ) * (this.speed ) ;
+
 
       if(this.speed == Infinity){
         this.momentum = { x: 0.0, y: 0.0, z: 0.0 };
         this.translation = { x: 0.0, y: 0.0, z: 0.0 };
       }
 
-      /*input.colltest = input.collision.length;
-      input.colltest -= 0.026;
-      if(input.colltest <= 0.05 || this.midAir){input.colltest = 0}
+      if(!this.input.knockedBack){
+        this.state.changeInVelocity = THREE.MathUtils.clamp(this.state.changeInVelocity,-1,0);
 
-      //if(!input.grounded){input.colltest /= 15}
-      //if(!input.grounded){input.colltest /= 8}
-      if(!input.grounded){input.collision.length = 0}
-
-      this.momentum.x -= (this.momentum.x * (input.collision.length * 10));
-      this.momentum.z -= (this.momentum.z * (input.collision.length * 10));*/
-
-      if(!input.knockedBack){
-        input.changeInVelocity = THREE.MathUtils.clamp(input.changeInVelocity,-1,0);
-
-        if(Math.abs(input.changeInVelocity) < this.slopeTolerance){
-          input.changeInVelocity = 0;
+        if(Math.abs(this.state.changeInVelocity) < this.slopeTolerance){
+          this.state.changeInVelocity = 0;
         }
-      this.momentum.x += this.momentum.x * input.changeInVelocity;
-      this.momentum.z += this.momentum.z * input.changeInVelocity;
+      this.momentum.x += this.momentum.x * this.state.changeInVelocity * deltaTime;
+      this.momentum.z += this.momentum.z * this.state.changeInVelocity * deltaTime;
       }
 
       if(this.momentum.length() < this.minSpeed){
         this.momentum.x = 0; this.momentum.z = 0;
       }
 
-      if(input.reset){
-        input.reset = false;
+      if(this.state.reset){
+        this.state.reset = false;
         this.momentum.x = 0;
         this.momentum.z = 0;
       }
+
+      this.translation.x = THREE.MathUtils.clamp(this.momentum.x/100,-this.maxMomentum,this.maxMomentum);
+      this.translation.z = THREE.MathUtils.clamp(this.momentum.z/100,-this.maxMomentum,this.maxMomentum);
     }
   }
 }
